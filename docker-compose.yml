@@ -1,0 +1,36 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: secureteam-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: secureteam
+      POSTGRES_USER: secureteam_admin
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-SecureTeam2026!Dev}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U secureteam_admin -d secureteam"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: secureteam-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD:-SecureTeamRedis2026!}
+    volumes:
+      - redisdata:/data
+
+volumes:
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local

@@ -1,0 +1,203 @@
+// ============================================================
+// SecureTeam — Esquema de Base de Datos
+// El servidor NUNCA almacena texto plano de mensajes.
+// Solo ciphertext (texto cifrado) pasa por aquí.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Usuarios ---
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+model User {
+  id                    String    @id @default(uuid()) @db.Uuid
+  email                 String    @unique
+  displayName           String    @map("display_name")
+  role                  UserRole  @default(USER)
+  ssoSubjectId          String    @unique @map("sso_subject_id")
+  masterId              String?   @unique @map("master_id")
+  publicCode            String?   @unique @map("public_code")
+  confirmPin            String?   @map("confirm_pin")
+  publicIdentityKey     String?   @map("public_identity_key") @db.Text
+  signedPrekey          String?   @map("signed_prekey") @db.Text
+  signedPrekeySignature String?   @map("signed_prekey_signature") @db.Text
+  isActive              Boolean   @default(true) @map("is_active")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  lastSeenAt            DateTime? @map("last_seen_at")
+
+  sessions              Session[]
+  conversationMembers   ConversationMember[]
+  sentMessages          Message[]           @relation("SentMessages")
+  messageReceipts       MessageReceipt[]
+  preKeyBundles         PreKeyBundle[]
+  keyVerifications      KeyVerification[]
+  createdConversations  Conversation[]      @relation("CreatedConversations")
+  autoDestructProposals AutoDestructAgreement[] @relation("ProposedAgreements")
+  autoDestructAccepts   AutoDestructAgreement[] @relation("AcceptedAgreements")
+
+  @@map("users")
+}
+
+// --- Sesiones (para cierre remoto) ---
+
+model Session {
+  id          String   @id @default(uuid()) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  deviceInfo  String   @map("device_info")
+  tokenHash   String   @map("token_hash")
+  isRevoked   Boolean  @default(false) @map("is_revoked")
+  createdAt   DateTime @default(now()) @map("created_at")
+  expiresAt   DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("sessions")
+}
+
+// --- Conversaciones ---
+
+enum ConversationType {
+  DIRECT
+  GROUP
+  ANNOUNCEMENT
+}
+
+model Conversation {
+  id         String           @id @default(uuid()) @db.Uuid
+  type       ConversationType
+  name       String?
+  createdBy  String           @map("created_by") @db.Uuid
+  maxMembers Int              @default(2) @map("max_members")
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  creator    User                    @relation("CreatedConversations", fields: [createdBy], references: [id])
+  members    ConversationMember[]
+  messages   Message[]
+  autoDestructAgreements AutoDestructAgreement[]
+
+  @@map("conversations")
+}
+
+// --- Miembros de Conversación ---
+
+enum MemberRole {
+  MEMBER
+  ADMIN
+}
+
+model ConversationMember {
+  conversationId String     @map("conversation_id") @db.Uuid
+  userId         String     @map("user_id") @db.Uuid
+  memberRole     MemberRole @default(MEMBER) @map("member_role")
+  canWrite       Boolean    @default(true) @map("can_write")
+  joinedAt       DateTime   @default(now()) @map("joined_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@map("conversation_members")
+}
+
+// --- Mensajes (solo ciphertext) ---
+
+model Message {
+  id                      String    @id @default(uuid()) @db.Uuid
+  conversationId          String    @map("conversation_id") @db.Uuid
+  senderId                String    @map("sender_id") @db.Uuid
+  encryptedContent        String    @map("encrypted_content") @db.Text
+  iv                      String    @db.Text
+  senderEphemeralPublicKey String?  @map("sender_ephemeral_public_key") @db.Text
+  replyToId               String?   @map("reply_to_id") @db.Uuid
+  isDeleted               Boolean   @default(false) @map("is_deleted")
+  deletedForAll           Boolean   @default(false) @map("deleted_for_all")
+  autoDestructAt          DateTime? @map("auto_destruct_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+
+  conversation Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User             @relation("SentMessages", fields: [senderId], references: [id])
+  replyTo      Message?         @relation("MessageReplies", fields: [replyToId], references: [id])
+  replies      Message[]        @relation("MessageReplies")
+  receipts     MessageReceipt[]
+
+  @@index([conversationId, createdAt])
+  @@index([autoDestructAt])
+  @@map("messages")
+}
+
+// --- Recibos de Mensaje ---
+
+model MessageReceipt {
+  messageId   String    @map("message_id") @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  deliveredAt DateTime? @map("delivered_at")
+  readAt      DateTime? @map("read_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId])
+  @@map("message_receipts")
+}
+
+// --- Pre-Key Bundles (para protocolo Signal) ---
+
+model PreKeyBundle {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @map("user_id") @db.Uuid
+  oneTimePrekeyPublic String   @map("one_time_prekey_public") @db.Text
+  isUsed              Boolean  @default(false) @map("is_used")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isUsed])
+  @@map("prekey_bundles")
+}
+
+// --- Verificación de Claves ---
+
+model KeyVerification {
+  id                     String   @id @default(uuid()) @db.Uuid
+  userId                 String   @map("user_id") @db.Uuid
+  identityKeyFingerprint String   @map("identity_key_fingerprint") @db.Text
+  isCurrent              Boolean  @default(true) @map("is_current")
+  verifiedAt             DateTime @default(now()) @map("verified_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isCurrent])
+  @@map("key_verifications")
+}
+
+// --- Acuerdo de Auto-Destrucción ---
+
+model AutoDestructAgreement {
+  id              String   @id @default(uuid()) @db.Uuid
+  conversationId  String   @map("conversation_id") @db.Uuid
+  proposedBy      String   @map("proposed_by") @db.Uuid
+  acceptedBy      String?  @map("accepted_by") @db.Uuid
+  minutes         Int
+  isActive        Boolean  @default(false) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  proposer     User         @relation("ProposedAgreements", fields: [proposedBy], references: [id])
+  accepter     User?        @relation("AcceptedAgreements", fields: [acceptedBy], references: [id])
+
+  @@index([conversationId, isActive])
+  @@map("auto_destruct_agreements")
+}
