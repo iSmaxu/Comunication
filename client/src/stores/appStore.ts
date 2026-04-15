@@ -143,12 +143,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       api.setToken(token);
       localStorage.setItem('secureteam_token', token);
 
-      // Inicializar claves de cifrado
-      const keys = await initializeUserKeys();
-
-      // Subir claves públicas al servidor (si son nuevas)
-      if (!user.publicIdentityKey) {
-        await api.updateKeys(keys);
+      // Inicializar claves de cifrado (no bloquear login si falla)
+      try {
+        const keys = await initializeUserKeys();
+        // Subir claves públicas al servidor (si son nuevas)
+        if (!user.publicIdentityKey) {
+          await api.updateKeys(keys);
+        }
+      } catch (cryptoError) {
+        console.warn('⚠️ Error inicializando claves crypto (el login continúa):', cryptoError);
       }
 
       // Conectar WebSocket

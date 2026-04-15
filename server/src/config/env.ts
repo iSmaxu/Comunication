@@ -12,8 +12,8 @@ const envSchema = z.object({
   // Base de datos
   DATABASE_URL: z.string().min(1),
 
-  // Redis
-  REDIS_URL: z.string(),
+  // Redis (optional — server runs without it)
+  REDIS_URL: z.string().default(''),
 
   // Servidor
   PORT: z.coerce.number().default(3001),
