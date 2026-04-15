@@ -371,4 +371,68 @@ router.get(
   }
 );
 
+// -------------------------------------------------------
+// DELETE /api/admin/users/:userId — Borrar usuario permanentemente
+// Elimina el usuario y todos sus datos asociados
+// -------------------------------------------------------
+router.delete(
+  '/users/:userId',
+  async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+    try {
+      const userId = req.params.userId as string;
+
+      // No permitir borrarse a sí mismo
+      if (userId === req.user!.id) {
+        res.status(400).json({
+          success: false,
+          error: 'No puedes eliminarte a ti mismo',
+        });
+        return;
+      }
+
+      const user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user) {
+        res.status(404).json({ success: false, error: 'Usuario no encontrado' });
+        return;
+      }
+
+      // Borrar todo en orden (por dependencias de FK)
+      // 1. Sesiones
+      await prisma.session.deleteMany({ where: { userId } });
+
+      // 2. Key verifications
+      await prisma.keyVerification.deleteMany({ where: { userId } });
+
+      // 3. PreKey bundles
+      await prisma.preKeyBundle.deleteMany({ where: { userId } });
+
+      // 4. Mensajes enviados por este usuario
+      await prisma.message.deleteMany({ where: { senderId: userId } });
+
+      // 5. Membresías de conversaciones
+      await prisma.conversationMember.deleteMany({ where: { userId } });
+
+      // 6. Eliminar identidad de Firebase RTDB
+      if (user.publicCode) {
+        try {
+          await set(ref(rtdb, `identities/publicCode_${user.publicCode}`), null);
+        } catch (err) {
+          console.error('Error eliminando identidad de Firebase:', err);
+        }
+      }
+
+      // 7. Finalmente eliminar el usuario
+      await prisma.user.delete({ where: { id: userId } });
+
+      res.json({
+        success: true,
+        message: `Usuario "${user.displayName}" (${user.email}) eliminado permanentemente`,
+      });
+    } catch (error) {
+      console.error('Error eliminando usuario:', error);
+      res.status(500).json({ success: false, error: 'Error al eliminar usuario' });
+    }
+  }
+);
+
 export default router;

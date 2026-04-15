@@ -244,6 +244,10 @@ class ApiClient {
     return this.request<{ success: boolean; data: any }>('POST', '/admin/users/register', data);
   }
 
+  async deleteUser(userId: string) {
+    return this.request<{ success: boolean; message: string }>('DELETE', `/admin/users/${userId}`);
+  }
+
   // --- Handshakes ---
 
   async sendHandshakeRequest(targetPublicCode: string) {

@@ -159,6 +159,25 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (!user) return;
+
+    if (!confirm(`⚠️ ¿Estás seguro de ELIMINAR PERMANENTEMENTE a "${user.displayName}" (${user.email})?\n\nEsta acción NO se puede deshacer. Se borrarán:\n- Todas sus sesiones\n- Todos sus mensajes\n- Todas sus claves\n- Su cuenta completa`)) return;
+
+    if (!confirm(`🔴 ÚLTIMA CONFIRMACIÓN:\n\n¿Realmente deseas eliminar a "${user.displayName}"?\n\nEscribe: esta acción es IRREVERSIBLE.`)) return;
+
+    try {
+      const response = await api.deleteUser(userId) as any;
+      setActionMessage(response.message || 'Usuario eliminado');
+      await loadUsers();
+      if (selectedUserId === userId) setSelectedUserId(null);
+      setTimeout(() => setActionMessage(null), 4000);
+    } catch (error: any) {
+      setActionMessage(`Error: ${error.message}`);
+    }
+  };
+
   const formatDate = (date: string) => {
     return new Date(date).toLocaleDateString('es', {
       day: '2-digit',
@@ -366,6 +385,20 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
                     >
                       {user.isActive ? 'Desactivar' : 'Activar'}
                     </button>
+                    {user.role !== 'ADMIN' && (
+                      <button
+                        className="btn-sm"
+                        style={{
+                          background: 'rgba(255, 50, 50, 0.15)',
+                          color: '#ff4444',
+                          border: '1px solid rgba(255, 50, 50, 0.3)',
+                        }}
+                        onClick={() => handleDeleteUser(user.id)}
+                        title="Eliminar usuario permanentemente"
+                      >
+                        🗑️ Eliminar
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
