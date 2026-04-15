@@ -3,6 +3,7 @@ import { prisma } from '../config/database.js';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import { ref, get, set } from 'firebase/database';
 import { rtdb } from '../config/firebase.js';
+import { joinUserToConversation, getIo } from '../services/websocket.js';
 
 const router = Router();
 router.use(authMiddleware);
@@ -130,6 +131,15 @@ router.post('/accept', async (req: AuthenticatedRequest, res: Response): Promise
 
      // 5. Marcar handshake como Accepted
      await set(ref(rtdb, `handshakes/${requestId}/status`), "accepted");
+
+     // 6. Join connected sockets and emit new conversation
+     joinUserToConversation(receiverUserId, conversation.id);
+     joinUserToConversation(senderUserId, conversation.id);
+     
+     const io = getIo();
+     if (io) {
+        io.to(`conversation:${conversation.id}`).emit('conversation:new', { conversationId: conversation.id });
+     }
 
      res.json({ success: true, conversationId: conversation.id });
    } catch (error) {

@@ -19,6 +19,7 @@ interface User {
   role: 'ADMIN' | 'USER';
   publicIdentityKey: string | null;
   publicCode: string | null;
+  confirmPin: string | null;
   isActive: boolean;
   lastSeenAt: string | null;
 }
@@ -417,5 +418,10 @@ function setupSocketListeners(
   socket.on('session:force_logout', () => {
     alert('Tu sesión ha sido cerrada por un administrador.');
     get().logout();
+  });
+
+  // Nueva conversación creada/aceptada
+  socket.on('conversation:new', (data: { conversationId: string }) => {
+    get().loadConversations();
   });
 }

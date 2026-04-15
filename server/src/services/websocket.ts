@@ -26,11 +26,12 @@ interface JwtPayload {
 
 // Mapa de usuarios conectados: userId -> Set de socketIds
 const connectedUsers = new Map<string, Set<string>>();
+let ioInstance: Server | null = null;
 
 export function setupWebSocket(httpServer: HttpServer): Server {
   const io = new Server(httpServer, {
     cors: {
-      origin: env.CORS_ORIGIN,
+      origin: '*',
       methods: ['GET', 'POST'],
       credentials: true,
     },
@@ -391,7 +392,25 @@ export function setupWebSocket(httpServer: HttpServer): Server {
   }, 60000); // Cada 60 segundos
 
   console.log('🔌 WebSocket configurado');
+  ioInstance = io;
   return io;
+}
+
+export function getIo(): Server | null {
+  return ioInstance;
+}
+
+export function joinUserToConversation(userId: string, conversationId: string) {
+  if (!ioInstance) return;
+  const userSockets = connectedUsers.get(userId);
+  if (userSockets) {
+    for (const socketId of userSockets) {
+      const socket = ioInstance.sockets.sockets.get(socketId);
+      if (socket) {
+        socket.join(`conversation:${conversationId}`);
+      }
+    }
+  }
 }
 
 export function getConnectedUsers(): Map<string, Set<string>> {

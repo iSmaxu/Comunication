@@ -9,6 +9,7 @@ import { env } from '../config/env.js';
 import { createSession, authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';
 import { generateSecureIdentity } from '../utils/identity.js';
 import { ref, set } from 'firebase/database';
 import { rtdb } from '../config/firebase.js';
@@ -40,63 +41,65 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       console.error('Error parseando AUTHORIZED_USERS', e);
     }
 
-    // Buscar credenciales válidas
-    const validUser = authorizedUsers.find((u) => u.email === email && u.password === password);
+    // Buscar credenciales en .env (Capa 1: Admins estáticos)
+    const validEnvUser = authorizedUsers.find((u) => u.email === email && u.password === password);
+    let user = null;
 
-    if (!validUser) {
-      res.status(401).json({
-        success: false,
-        error: 'Credenciales inválidas',
-      });
-      return;
-    }
+    if (validEnvUser) {
+      // Flujo de Admin desde .env
+      const ssoSubjectId = `local_${email}`;
+      user = await prisma.user.findUnique({ where: { ssoSubjectId } });
 
-    // Generar un ID único basado en el correo para la base de datos local
-    const ssoSubjectId = `local_${email}`;
+      if (!user) {
+        let identity = generateSecureIdentity();
+        let isUnique = false;
+        while (!isUnique) {
+          const existing = await prisma.user.findFirst({
+             where: { OR: [{ masterId: identity.masterId }, { publicCode: identity.publicCode }] }
+          });
+          if (existing) {
+            identity = generateSecureIdentity();
+          } else {
+            isUnique = true;
+          }
+        }
 
-    // Buscar o crear usuario
-    let user = await prisma.user.findUnique({
-      where: { ssoSubjectId },
-    });
-
-    if (!user) {
-      let identity = generateSecureIdentity();
-      let isUnique = false;
-      while (!isUnique) {
-        const existing = await prisma.user.findFirst({
-           where: { OR: [{ masterId: identity.masterId }, { publicCode: identity.publicCode }] }
+        user = await prisma.user.create({
+          data: {
+            email,
+            displayName: validEnvUser.name || email.split('@')[0],
+            ssoSubjectId,
+            role: validEnvUser.role || 'ADMIN',
+            masterId: identity.masterId,
+            publicCode: identity.publicCode,
+            confirmPin: identity.confirmPin
+          },
         });
-        if (existing) {
-          identity = generateSecureIdentity();
-        } else {
-          isUnique = true;
+
+        try {
+          await set(ref(rtdb, `identities/publicCode_${identity.publicCode}`), {
+            masterId: identity.masterId,
+            userId: user.id,
+            confirmPin: identity.confirmPin
+          });
+        } catch (err) {
+          console.error('Error guardando identidad en Firebase:', err);
         }
       }
+    } else {
+      // Flujo de Usuario Normal desde Base de Datos (Capa 2)
+      user = await prisma.user.findUnique({ where: { email } });
 
-      user = await prisma.user.create({
-        data: {
-          email,
-          displayName: validUser.name || email.split('@')[0],
-          ssoSubjectId,
-          role: validUser.role || 'USER',
-          masterId: identity.masterId,
-          publicCode: identity.publicCode,
-          confirmPin: identity.confirmPin
-        },
-      });
-
-      // Guardar en Firebase RTDB
-      try {
-        await set(ref(rtdb, `identities/publicCode_${identity.publicCode}`), {
-          masterId: identity.masterId,
-          userId: user.id,
-          confirmPin: identity.confirmPin
-        });
-      } catch (err) {
-        console.error('Error guardando identidad en Firebase:', err);
+      if (!user || !user.passwordHash) {
+        res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+        return;
       }
 
-      console.log(`👤 Nuevo usuario creado: ${user.displayName} (${user.role})`);
+      const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
+      if (!isPasswordValid) {
+        res.status(401).json({ success: false, error: 'Credenciales inválidas' });
+        return;
+      }
     }
 
     if (!user.isActive) {
@@ -133,6 +136,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
           role: user.role,
           publicIdentityKey: user.publicIdentityKey,
           publicCode: user.publicCode,
+          confirmPin: user.confirmPin,
         },
       },
     });
@@ -191,6 +195,7 @@ router.get(
           role: true,
           publicIdentityKey: true,
           publicCode: true,
+          confirmPin: true,
           isActive: true,
           createdAt: true,
           lastSeenAt: true,

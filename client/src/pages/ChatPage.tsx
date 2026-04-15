@@ -222,6 +222,22 @@ export default function ChatPage() {
             <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
               {user?.role === 'ADMIN' ? '👑 Administrador' : 'Usuario'}
             </div>
+            {user?.publicCode && (
+              <div style={{
+                marginTop: '4px',
+                fontSize: '11px',
+                color: 'var(--color-text-muted)',
+                background: 'rgba(255,255,255,0.05)',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                display: 'inline-flex',
+                flexDirection: 'column',
+                gap: '2px'
+              }}>
+                <span style={{ userSelect: 'all' }}><strong>Código:</strong> {user.publicCode}</span>
+                <span style={{ userSelect: 'all' }}><strong>PIN:</strong> {user.confirmPin}</span>
+              </div>
+            )}
           </div>
         </div>
 

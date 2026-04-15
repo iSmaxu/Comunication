@@ -7,12 +7,81 @@ import { Router, Response } from 'express';
 import { prisma } from '../config/database.js';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/auth.js';
 import { adminOnly } from '../middleware/roles.js';
+import bcrypt from 'bcryptjs';
+import { generateSecureIdentity } from '../utils/identity.js';
+import { ref, set } from 'firebase/database';
+import { rtdb } from '../config/firebase.js';
 
 const router = Router();
 
 // Todas las rutas requieren autenticación + rol admin
 router.use(authMiddleware);
 router.use(adminOnly);
+
+// -------------------------------------------------------
+// POST /api/admin/users/register — Registrar un nuevo usuario (User normal)
+// -------------------------------------------------------
+router.post('/users/register', async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+  try {
+    const { email, password, displayName } = req.body;
+
+    if (!email || !password || !displayName) {
+      res.status(400).json({ success: false, error: 'Faltan campos requeridos' });
+      return;
+    }
+
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      res.status(400).json({ success: false, error: 'El correo ya está registrado' });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const ssoSubjectId = `local_${email}`;
+
+    let identity = generateSecureIdentity();
+    let isUnique = false;
+    while (!isUnique) {
+      const existingKey = await prisma.user.findFirst({
+         where: { OR: [{ masterId: identity.masterId }, { publicCode: identity.publicCode }] }
+      });
+      if (existingKey) {
+        identity = generateSecureIdentity();
+      } else {
+        isUnique = true;
+      }
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        displayName,
+        ssoSubjectId,
+        passwordHash,
+        role: 'USER',
+        masterId: identity.masterId,
+        publicCode: identity.publicCode,
+        confirmPin: identity.confirmPin
+      },
+      select: { id: true, email: true, displayName: true, role: true, createdAt: true }
+    });
+
+    try {
+      await set(ref(rtdb, `identities/publicCode_${identity.publicCode}`), {
+        masterId: identity.masterId,
+        userId: user.id,
+        confirmPin: identity.confirmPin
+      });
+    } catch (err) {
+      console.error('Error guardando identidad en Firebase RTDB:', err);
+    }
+
+    res.json({ success: true, data: user });
+  } catch (error) {
+    console.error('Error registrando usuario:', error);
+    res.status(500).json({ success: false, error: 'Error interno al crear usuario' });
+  }
+});
 
 // -------------------------------------------------------
 // GET /api/admin/users — Listar todos los usuarios

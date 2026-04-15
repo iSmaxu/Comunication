@@ -47,6 +47,12 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
+  // Registration Form State
+  const [registerEmail, setRegisterEmail] = useState('');
+  const [registerPassword, setRegisterPassword] = useState('');
+  const [registerName, setRegisterName] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+
   const loadUsers = useCallback(async () => {
     try {
       const response = await api.getAdminUsers();
@@ -109,6 +115,32 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
       setTimeout(() => setActionMessage(null), 3000);
     } catch (error: any) {
       setActionMessage(`Error: ${error.message}`);
+    }
+  };
+
+  const handleRegisterUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!registerEmail || !registerPassword || !registerName) {
+         setActionMessage('Error: Todos los campos son requeridos');
+         return;
+    }
+    setIsRegistering(true);
+    try {
+      await api.registerUser({
+        email: registerEmail,
+        password: registerPassword,
+        displayName: registerName
+      });
+      setActionMessage('¡Usuario registrado exitosamente!');
+      setRegisterEmail('');
+      setRegisterPassword('');
+      setRegisterName('');
+      await loadUsers();
+      setTimeout(() => setActionMessage(null), 3000);
+    } catch (error: any) {
+      setActionMessage(`Error: ${error.message}`);
+    } finally {
+      setIsRegistering(false);
     }
   };
 
@@ -228,6 +260,39 @@ export default function AdminPanel({ onBack }: AdminPanelProps) {
         {/* ===== TAB: USUARIOS Y SESIONES ===== */}
         {activeTab === 'users' && (
           <div>
+            <div className="admin-section">
+              <h3>➕ Registrar Nuevo Usuario</h3>
+              <form onSubmit={handleRegisterUser} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.05)' }}>
+                <input
+                  type="email"
+                  placeholder="Correo electrónico (ej: carlos@empresa.com)"
+                  value={registerEmail}
+                  onChange={(e) => setRegisterEmail(e.target.value)}
+                  disabled={isRegistering}
+                  style={{ width: '100%' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Nombre y Apellido (ej: Carlos Pérez)"
+                  value={registerName}
+                  onChange={(e) => setRegisterName(e.target.value)}
+                  disabled={isRegistering}
+                  style={{ width: '100%' }}
+                />
+                <input
+                  type="text"
+                  placeholder="Contraseña inicial"
+                  value={registerPassword}
+                  onChange={(e) => setRegisterPassword(e.target.value)}
+                  disabled={isRegistering}
+                  style={{ width: '100%' }}
+                />
+                <button type="submit" disabled={isRegistering} className="btn-primary" style={{ alignSelf: 'flex-start', marginTop: '5px' }}>
+                  {isRegistering ? 'Registrando...' : 'Registrar Usuario'}
+                </button>
+              </form>
+            </div>
+
             <div className="admin-section">
               <h3>Usuarios del Equipo ({users.length})</h3>
 

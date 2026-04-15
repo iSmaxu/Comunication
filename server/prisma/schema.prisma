@@ -29,6 +29,7 @@ model User {
   masterId              String?   @unique @map("master_id")
   publicCode            String?   @unique @map("public_code")
   confirmPin            String?   @map("confirm_pin")
+  passwordHash          String?   @map("password_hash")
   publicIdentityKey     String?   @map("public_identity_key") @db.Text
   signedPrekey          String?   @map("signed_prekey") @db.Text
   signedPrekeySignature String?   @map("signed_prekey_signature") @db.Text

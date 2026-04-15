@@ -37,7 +37,35 @@ async function main() {
     contentSecurityPolicy: env.NODE_ENV === 'production' ? undefined : false,
   }));
   app.use(cors({
-    origin: env.CORS_ORIGIN,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, etc.)
+      if (!origin) return callback(null, true);
+      
+      // Parse allowed origins from env (comma-separated)
+      const allowedOrigins = env.CORS_ORIGIN.split(',').map(o => o.trim());
+      
+      // Always allow Capacitor/Ionic/localhost origins
+      const alwaysAllow = [
+        'capacitor://localhost',
+        'ionic://localhost',
+        'http://localhost',
+        'http://localhost:5173',
+        'http://localhost:5174',
+      ];
+      
+      const all = [...allowedOrigins, ...alwaysAllow];
+      
+      if (all.some(allowed => origin.startsWith(allowed) || origin === allowed)) {
+        return callback(null, true);
+      }
+      
+      // In development, allow everything
+      if (env.NODE_ENV === 'development') {
+        return callback(null, true);
+      }
+      
+      callback(new Error('CORS not allowed'));
+    },
     credentials: true,
   }));
   app.use(express.json({ limit: '1mb' }));

@@ -181,6 +181,10 @@ class ApiClient {
     return this.request<{ success: boolean; data: any[] }>('GET', '/admin/key-verification');
   }
 
+  async registerUser(data: { email: string; password: string; displayName: string }) {
+    return this.request<{ success: boolean; data: any }>('POST', '/admin/users/register', data);
+  }
+
   // --- Handshakes ---
 
   async sendHandshakeRequest(targetPublicCode: string) {
