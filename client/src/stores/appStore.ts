@@ -137,7 +137,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
       const deviceInfo = navigator.userAgent;
 
+      const apiUrl = import.meta.env.VITE_API_URL || '/api';
+      alert(`DEBUG 1: Calling API login at: ${apiUrl}/auth/login`);
       const response = await api.login(email, password, deviceInfo);
+      alert('DEBUG 2: API response received');
       const { token, user } = response.data;
 
       api.setToken(token);
@@ -154,6 +157,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.warn('⚠️ Error inicializando claves crypto (el login continúa):', cryptoError);
       }
 
+      alert('DEBUG 3: Connecting WebSocket...');
       // Conectar WebSocket
       const socket = connectSocket(token);
       setupSocketListeners(socket, set, get);
@@ -164,11 +168,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         isAuthenticated: true,
         isLoading: false,
       });
+      alert('DEBUG 4: Login complete, loading conversations...');
 
       // Cargar conversaciones
       await get().loadConversations();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error en login:', error);
+      alert('DEBUG FAIL: ' + (error?.message || JSON.stringify(error)));
       set({ isLoading: false });
       throw error;
     }

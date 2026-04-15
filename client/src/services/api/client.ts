@@ -21,6 +21,7 @@ class ApiClient {
     path: string,
     body?: unknown
   ): Promise<T> {
+    const url = `${API_BASE}${path}`;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
     };
@@ -29,16 +30,74 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${this.token}`;
     }
 
-    const response = await fetch(`${API_BASE}${path}`, {
+    // Detect Capacitor native platform
+    const Capacitor = (window as any).Capacitor;
+    const isNative = Capacitor?.isNativePlatform?.() === true;
+
+    if (isNative) {
+      // Use Capacitor's native HTTP directly — only way to do cross-origin on Android
+      return this.capacitorRequest<T>(method, url, headers, body);
+    }
+
+    // Web: use standard fetch
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || `Error ${response.status}`);
+      }
+
+      return data;
+    } catch (fetchError: any) {
+      clearTimeout(timeoutId);
+      if (fetchError.name === 'AbortError') {
+        throw new Error(`Timeout: servidor no respondió en 15s`);
+      }
+      throw fetchError;
+    }
+  }
+
+  private async capacitorRequest<T>(
+    method: string,
+    url: string,
+    headers: Record<string, string>,
+    body?: unknown
+  ): Promise<T> {
+    // Dynamically import CapacitorHttp from @capacitor/core
+    const { CapacitorHttp } = await import('@capacitor/core');
+
+    const options: any = {
+      url,
       method,
       headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    };
 
-    const data = await response.json();
+    if (body) {
+      options.data = body; // CapacitorHttp takes raw object, not JSON string
+    }
 
-    if (!response.ok) {
-      throw new Error(data.error || `Error ${response.status}`);
+    const response = await CapacitorHttp.request(options);
+
+    let data: any;
+    try {
+      data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data;
+    } catch {
+      throw new Error(`Respuesta inválida (status ${response.status})`);
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(data?.error || `Error ${response.status}`);
     }
 
     return data;

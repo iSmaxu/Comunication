@@ -1,8 +1,3 @@
-// ============================================================
-// SecureTeam — Página de Login
-// SSO simulado para desarrollo, pantalla premium
-// ============================================================
-
 import { useState } from 'react';
 import { useAppStore } from '../stores/appStore.js';
 
@@ -12,6 +7,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugInfo, setDebugInfo] = useState<string | null>(null);
+
+  const API_URL = import.meta.env.VITE_API_URL || '/api';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,9 +21,54 @@ export default function LoginPage() {
     try {
       await login(email.trim(), password.trim());
     } catch (err: any) {
-      setError(err.message || 'Error al iniciar sesión');
+      const msg = err?.message || JSON.stringify(err) || 'Error desconocido';
+      setError(msg);
+      alert('Login error: ' + msg);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const testConnection = async () => {
+    setDebugInfo('Probando conexión...');
+    const url = `${API_URL}/health`;
+    
+    // Check if on native Capacitor
+    const Cap = (window as any).Capacitor;
+    const isNative = Cap?.isNativePlatform?.() === true;
+    
+    if (isNative) {
+      // Use CapacitorHttp directly
+      try {
+        setDebugInfo(`CapacitorHttp GET: ${url}`);
+        const { CapacitorHttp } = await import('@capacitor/core');
+        const resp = await CapacitorHttp.request({
+          url,
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const info = `✅ CapacitorHttp OK!\nStatus: ${resp.status}\nData: ${JSON.stringify(resp.data)}`;
+        setDebugInfo(info);
+        alert(info);
+      } catch (err: any) {
+        const msg = `❌ CapacitorHttp falló: ${err?.message || JSON.stringify(err)}\nURL: ${url}`;
+        setDebugInfo(msg);
+        alert(msg);
+      }
+    } else {
+      // Web: use fetch
+      try {
+        setDebugInfo(`Fetch GET: ${url}`);
+        const resp = await fetch(url);
+        const data = await resp.json();
+        const info = `✅ Fetch OK!\nStatus: ${resp.status}\nData: ${JSON.stringify(data)}`;
+        setDebugInfo(info);
+        alert(info);
+      } catch (err: any) {
+        const msg = `❌ Fetch falló: ${err?.message}\nURL: ${url}`;
+        setDebugInfo(msg);
+        alert(msg);
+      }
     }
   };
 
@@ -112,9 +155,40 @@ export default function LoginPage() {
           </div>
         </form>
 
-        <p style={{ textAlign: 'center', marginTop: '24px', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-          En producción, se usará tu proveedor SSO corporativo
-        </p>
+        {/* DEBUG: Test connection button */}
+        <button
+          onClick={testConnection}
+          style={{
+            marginTop: '16px',
+            width: '100%',
+            padding: '10px',
+            background: 'rgba(0,206,201,0.15)',
+            border: '1px solid rgba(0,206,201,0.3)',
+            borderRadius: '8px',
+            color: '#00cec9',
+            fontSize: '13px',
+            cursor: 'pointer',
+          }}
+        >
+          🔧 Test Conexión (Debug)
+        </button>
+
+        {debugInfo && (
+          <pre style={{
+            marginTop: '10px',
+            padding: '10px',
+            background: 'rgba(0,0,0,0.3)',
+            borderRadius: '8px',
+            fontSize: '11px',
+            color: '#ddd',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            maxHeight: '200px',
+            overflow: 'auto',
+          }}>
+            {debugInfo}
+          </pre>
+        )}
       </div>
     </div>
   );
