@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs';
 import { generateSecureIdentity } from '../utils/identity.js';
 import { ref, set } from 'firebase/database';
 import { rtdb } from '../config/firebase.js';
+import { getIo } from '../services/websocket.js';
 
 const router = Router();
 
@@ -197,7 +198,11 @@ router.post(
         data: { isRevoked: true },
       });
 
-      // TODO: Emitir evento WebSocket FORCE_LOGOUT al usuario
+      // Emitir evento WebSocket FORCE_LOGOUT al usuario
+      const io = getIo();
+      if (io && (io as any).forceLogout) {
+        await (io as any).forceLogout(userId, sessionId);
+      }
 
       res.json({
         success: true,
@@ -236,7 +241,11 @@ router.post(
         data: { isRevoked: true },
       });
 
-      // TODO: Emitir evento WebSocket FORCE_LOGOUT al usuario
+      // Emitir evento WebSocket FORCE_LOGOUT al usuario a todas sus sesiones
+      const io = getIo();
+      if (io && (io as any).forceLogout) {
+        await (io as any).forceLogout(userId);
+      }
 
       res.json({
         success: true,
@@ -288,6 +297,12 @@ router.put(
           where: { userId: user.id, isRevoked: false },
           data: { isRevoked: true },
         });
+
+        // Forzar desconexión inmediata de WebSockets
+        const io = getIo();
+        if (io && (io as any).forceLogout) {
+          await (io as any).forceLogout(user.id);
+        }
       }
 
       res.json({

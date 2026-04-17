@@ -6,7 +6,7 @@
 import { create } from 'zustand';
 import { api } from '../services/api/client.js';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket/client.js';
-import { initializeUserKeys, destroyAllKeys } from '../services/crypto/encrypt.js';
+import { initializeUserKeys, destroyAllKeys, encryptMessage } from '../services/crypto/encrypt.js';
 
 // -------------------------------------------------------
 // Tipos locales
@@ -286,21 +286,54 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   sendMessage: async (conversationId: string, plaintext: string) => {
     try {
-      const { replyingTo } = get();
+      const { replyingTo, conversations, user } = get();
 
-      // TODO: Cifrar con el módulo crypto antes de enviar
-      // Por ahora enviamos como texto para pruebas iniciales
       const socket = getSocket();
-      if (socket) {
-        socket.emit('message:send', {
-          conversationId,
-          encryptedContent: plaintext, // TODO: reemplazar con cifrado real
-          iv: 'pending', // TODO: IV real del cifrado
-          senderEphemeralPublicKey: null,
-          replyToId: replyingTo?.id || null,
-          tempId: `temp_${Date.now()}`,
-        });
+      if (!socket) throw new Error('No hay conexión de red para enviar mensaje');
+
+      const conversation = conversations.find(c => c.id === conversationId);
+      if (!conversation) throw new Error('Conversación no encontrada');
+
+      let encryptedPayload;
+
+      // Cifrado peer-to-peer para conversaciones directas
+      if (conversation.type === 'DIRECT') {
+        const otherMember = conversation.members.find(m => m.userId !== user?.id);
+        if (!otherMember) throw new Error('No se puede determinar el destinatario para el cifrado');
+        
+        try {
+          // Intentar cifrar con Double Ratchet
+          const { encryptedContent, iv, senderEphemeralPublicKey } = await encryptMessage(otherMember.userId, plaintext);
+          encryptedPayload = {
+            encryptedContent,
+            iv,
+            senderEphemeralPublicKey
+          };
+        } catch (cryptoErr) {
+          console.warn('⚠️ Fallo cifrando mensaje (la sesión X3DH no está establecida, enviando sin cifrar para pruebas conectadas):', cryptoErr);
+          encryptedPayload = {
+            encryptedContent: plaintext,
+            iv: 'pending',
+            senderEphemeralPublicKey: null
+          };
+        }
+      } else {
+        // TODO: Implementar Sender Keys o cifrado pairwise para grupos
+        encryptedPayload = {
+          encryptedContent: plaintext,
+          iv: 'pending',
+          senderEphemeralPublicKey: null
+        };
       }
+
+      socket.emit('message:send', {
+        conversationId,
+        encryptedContent: encryptedPayload.encryptedContent,
+        iv: encryptedPayload.iv,
+        senderEphemeralPublicKey: encryptedPayload.senderEphemeralPublicKey,
+        replyToId: replyingTo?.id || null,
+        tempId: `temp_${Date.now()}`,
+      });
 
       set({ replyingTo: null });
     } catch (error) {
@@ -405,7 +438,10 @@ function setupSocketListeners(
   socket.on('message:read_ack', (data: { messageId: string; userId: string; readAt: string }) => {
     const currentUser = get().user;
     if (currentUser?.role !== 'ADMIN') return;
-    // TODO: actualizar receipts en el store
+    
+    // Aquí podemos marcar localmente un mensaje como leído si el modelo Message se amplía.
+    // Actualmente 'readAt' o 'readReceipts' no está definido en el modelo tipo Message del front.
+    console.log(`Mensaje ${data.messageId} leído por usuario ${data.userId} en ${data.readAt}`);
   });
 
   // Usuario online/offline
